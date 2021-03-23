@@ -1,0 +1,6 @@
+FROM java:8
+EXPOSE 8008
+
+ADD /target/DQMS-0.0.1-SNAPSHOT.jar DQMS-0.0.1-SNAPSHOT.jar
+
+ENTRYPOINT [ "java", "-jar", "DQMS-0.0.1-SNAPSHOT.jar" ]

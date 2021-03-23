@@ -1,0 +1,44 @@
+pipeline {
+    agent {label 'slave_from_same_server'}
+    stages {
+        stage('SonarQube analysis') {
+           steps {
+             withSonarQubeEnv('sonar-runner-dqms') {
+             dir ("F:/Jenkins_Workspace/workspace/DQMS_Pipe_Email_Testing/") {
+                 bat 'D:/maven/bin/mvn sonar:sonar -D "sonar.host.url=http://192.168.11.6:9000"'  
+             }
+    } // SonarQube taskId is automatically attached to the pipeline context
+  }
+}
+
+// No need to occupy a node
+        stage("Quality Gate"){
+           steps {
+            script {
+          timeout(time: 1200, unit: 'SECONDS') { // Just in case something goes wrong, pipeline will be killed after a timeout
+          def qg = waitForQualityGate()
+           if (qg.status != 'OK') {
+           slackSend channel: 'dqms-jenkins-activity', message: 'Pipeline Aborted on because of Quality Gate Not Satisfied in sonarqube - DQMS _Email'
+    }
+	else {
+	     try {
+         build "DQMS_Email_Job"
+         echo "Deployment_Done - Testing_Server - DQMS_Email_Service"
+  }  catch (err) {
+        echo "Caught: ${err}"
+        currentBuild.result = 'FAILURE'
+        slackSend channel: 'dqms-jenkins-activity', message: 'Failure on because of Java-Downstream job is failed'
+    }
+
+}
+
+  }
+}
+
+}
+}
+}
+}
+
+
+
