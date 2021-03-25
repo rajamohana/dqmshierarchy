@@ -8,23 +8,36 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.transaction.Transactional;
 
 import org.hibernate.Query;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
 import com.svm.dqms.Dao.HierarchyDao;
+import com.svm.dqms.Entity.IosMapping;
 import com.svm.dqms.Service.Log;
+import com.svm.dqms.dto.Category;
+import com.svm.dqms.dto.Child;
+import com.svm.dqms.dto.Children;
+import com.svm.dqms.dto.MainObject;
+import com.svm.dqms.dto.Subcategory;
 import com.svm.dqms.model.HierarchyModel;
 
 @Repository
@@ -38,125 +51,101 @@ public class HierarchyDaoImplementation implements HierarchyDao {
 
 	@Override
 	@Transactional
-	public List<String> getHierarchyDetails() {
+	public MainObject getHierarchyDetails() {
 
-        
-		
 		Session session = sessionFactory.getCurrentSession();
-		
-		String standQuery = "SELECT DISTINCT standard from public.isomapping";
+
+		String standQuery = "SELECT channel_id ,standard,category,subcategory,contents,positions,item,suffix,status from public.isomapping";
+
 		Query rootQuery = session.createSQLQuery(standQuery);
 		List<Object[]> rows = rootQuery.list();
-		List<String> standardcol = new ArrayList<String>(); 
-		for(Object row:rows)
-		{
-			String s = (String)row.toString();
-			if(!s.equals("(No mapping in 2018)"))
-			{
-				standardcol.add(s);
-			}
-			
-			
+		IosMapping iosmapping = new IosMapping();
+		
+		List<IosMapping> lsIosmapping = new ArrayList<IosMapping>();
+		MainObject mainObj = new MainObject();
+		List<Child> lsChild = new ArrayList<Child>();
+		Child child = new Child();
+		List<Category> lsCategory = new ArrayList<Category>();
+		Category categoryObj = new Category();
+		List<Subcategory> lsSubcategory = new ArrayList<Subcategory>();
+		Subcategory subCategoryObj = new Subcategory();
+		List<Children> lsChildren = new ArrayList<Children>();
+		Children children = new Children();
+
+		for (Object row : rows) {
+
+			List<?> temp = convertObjectToList(row);
+			iosmapping = new IosMapping(temp.get(0).toString(), temp.get(1).toString(), temp.get(2).toString(),
+					temp.get(3).toString(), temp.get(4).toString(), temp.get(5).toString(), temp.get(6).toString(),
+					temp.get(7).toString(),temp.get(8).toString());
+			lsIosmapping.add(iosmapping);
+
 		}
-		standardcol.forEach(System.out::println);
+
+		List<String> uniqueStandard = lsIosmapping.stream().map(IosMapping::getStandard).distinct()
+				.collect(Collectors.toList());
+
+		System.out.println(lsIosmapping.size());
+		for (String standard : uniqueStandard) {
+			List<IosMapping> sameStandardls = lsIosmapping.stream().filter(c -> c.getStandard().equals(standard))
+					.collect(Collectors.toList());
+
+			System.out.println("STD - " + standard + " -- " + sameStandardls.size());
+
+			List<String> uniqueCategoryforStandard = sameStandardls.stream().map(IosMapping::getCategory).distinct()
+					.collect(Collectors.toList());
+			System.out.println("  CatCount - " + uniqueCategoryforStandard.size());
+
+			for (String category : uniqueCategoryforStandard) {
+				List<IosMapping> sameCategoryls = sameStandardls.stream().filter(c -> c.getCategory().equals(category))
+						.collect(Collectors.toList());
+				System.out.println("\tCat - " + category + " -- " + sameCategoryls.size());
+
+				List<String> uniqueSubCategoryforCategory = sameCategoryls.stream().map(IosMapping::getSubcategory)
+						.distinct().collect(Collectors.toList());
+
+				System.out.println("\t  SubCatCount - " + uniqueSubCategoryforCategory.size());
+
+				for (String subCategory : uniqueSubCategoryforCategory) {
+					List<IosMapping> sameSubcategoryls = sameCategoryls.stream()
+							.filter(c -> c.getSubcategory().equals(subCategory)).collect(Collectors.toList());
+					System.out.println("\t\tSubCat - " + subCategory + " -- " + sameSubcategoryls.size());
+
+					for (IosMapping iosmap : sameSubcategoryls) {
+						children = new Children(Long.parseLong(iosmap.getChannelId()), iosmap.getSubcategory(), iosmap.getContents(), iosmap.getPositions(),
+								iosmap.getItem(), iosmap.getSuffix(), iosmap.getSuffix());
+						lsChildren.add(children);
+					}
+					subCategoryObj = new Subcategory(subCategory, lsChildren);
+					lsChildren = new ArrayList<Children>();
+					lsSubcategory.add(subCategoryObj);
+
+				}
+				categoryObj = new Category(category, lsSubcategory);
+				lsSubcategory = new ArrayList<Subcategory>();
+				lsCategory.add(categoryObj);
+
+			}
+			child = new Child(standard, lsCategory);
+			lsCategory = new ArrayList<Category>();
+			lsChild.add(child);
+
+		}
+
+		mainObj = new MainObject("Standard", lsChild);
+
 		session.flush();
 		session.clear();
-		
-		Session session2 = sessionFactory.getCurrentSession();
-		List<String> jsmeamotmain = new ArrayList<String>();
-		List<String> jsmeaoilmain = new ArrayList<String>();
-		List<String> jsmeanavmain = new ArrayList<String>();
-		List<String> jsmeamacmain = new ArrayList<String>();
-		
-		Map<String,List<String>> mainlist = new HashMap<>();
-		
-		for(String stand: standardcol)
-		{
-			
-			if(stand.equals("jsmea_mot")) {
-				String jsmeamot = "SELECT DISTINCT category from public.isomapping where standard = '"+stand+"'";
-				Query jsmeamotquery = session2.createSQLQuery(jsmeamot);
-				List<Object[]> jsmemotlist = jsmeamotquery.list();
-				for(Object row:jsmemotlist)
-				{
-					String s = (String)row.toString();
-					jsmeamotmain.add(s);
-				}
-				mainlist.put(stand, jsmeamotmain);
-			}
-			else if(stand.equals("jsmea_oil")){
-				String jsmeaoil = "SELECT DISTINCT category from public.isomapping where standard = '"+stand+"'";
-				Query jsmeaoilquery = session2.createSQLQuery(jsmeaoil);
-				List<Object[]> jsmeoillist = jsmeaoilquery.list();
-				for(Object row:jsmeoillist)
-				{
-					String s = (String)row.toString();
-					jsmeaoilmain.add(s);
-				}
-				mainlist.put(stand, jsmeaoilmain);
-			}
-			else if(stand.equals("jsmea_nav")) {
-				String jsmeanav = "SELECT DISTINCT category from public.isomapping where standard = '"+stand+"'";
-				Query jsmeanavquery = session2.createSQLQuery(jsmeanav);
-				List<Object[]> jsmenavlist = jsmeanavquery.list();
-				for(Object row:jsmenavlist)
-				{
-					String s = (String)row.toString();
-					jsmeanavmain.add(s);
-				}
-				mainlist.put(stand, jsmeanavmain);
-			}
-			else if(stand.equals("jsmea_mac")) {
-			
-				String jsmeamac = "SELECT DISTINCT category from public.isomapping where standard = '"+stand+"'";
-				Query jsmeamacquery = session2.createSQLQuery(jsmeamac);
-				List<Object[]> jsmemaclist = jsmeamacquery.list();
-				for(Object row:jsmemaclist)
-				{
-					String s = (String)row.toString();
-					jsmeamacmain.add(s);
-				}
-				mainlist.put(stand, jsmeamacmain);
-				
-			}
-			
-			
+		return mainObj;
+	}
+
+	public static List<?> convertObjectToList(Object obj) {
+		List<?> list = new ArrayList<>();
+		if (obj.getClass().isArray()) {
+			list = Arrays.asList((Object[]) obj);
+		} else if (obj instanceof Collection) {
+			list = new ArrayList<>((Collection<?>) obj);
 		}
-		session2.flush();
-		session2.clear();
-		//System.out.println(jsmeamotmain);
-		//System.out.println(jsmeamacmain);
-		//System.out.println(jsmeaoilmain);
-		//System.out.println(mainlist);
-		
-       List<HierarchyModel> hmodel = new ArrayList<>();
-		Session session3 = sessionFactory.getCurrentSession();
-		String query ="SELECT channel_id,standard,category,subcategory,contents from public.isomapping";
-		Query allfields = session3.createSQLQuery(query);
-		List<Object[]> allfieldslist = allfields.list();
-		
-		for(Object[] obj:allfieldslist)
-		{
-			HierarchyModel hm = new HierarchyModel();
-			hm.setChannel_id(obj[0].toString());
-			hm.setStandard(obj[1].toString());
-			hm.setCategory(obj[2].toString());
-			hm.setSubcategory(obj[3].toString());
-			hmodel.add(hm);
-		}
-		
-		System.out.println(hmodel);
-		for(String jsval:jsmeaoilmain) {
-		for(HierarchyModel hm:hmodel) {
-			if(jsval.equals(hm.getCategory())) {
-		
-			
-			System.out.println(hm.getChannel_id()+"  "+hm.getStandard()+"  "+hm.getCategory()+" "+hm.getSubcategory());
-		
-			}
-			}
-		}
-		
-		return null;
+		return list;
 	}
 }
